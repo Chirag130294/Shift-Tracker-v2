@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* GitHub Primer tokens. Colours are stored as "r g b" so Tailwind can apply opacity (bg-accent/10). */
+@layer base {
+  :root {
+    --c-canvas: 255 255 255;
+    --c-canvas-subtle: 246 248 250;
+    --c-canvas-inset: 239 242 245;
+    --c-line: 208 215 222;
+    --c-line-muted: 216 222 228;
+    --c-fg: 31 35 40;
+    --c-fg-muted: 101 109 118;
+    --c-fg-subtle: 110 119 129;
+    --c-accent: 9 105 218;
+    --c-accent-emphasis: 9 105 218;
+    --c-accent-subtle: 221 244 255;
+    --c-accent-on-fg: 84 174 255;
+    --c-success: 26 127 55;
+    --c-success-emphasis: 31 136 61;
+    --c-success-subtle: 218 251 225;
+    --c-success-on-fg: 74 194 107;
+    --c-danger: 207 34 46;
+    --c-danger-emphasis: 207 34 46;
+    --c-danger-subtle: 255 235 233;
+    --c-attention: 154 103 0;
+    --c-attention-subtle: 255 248 197;
+    --c-done: 130 80 223;
+    --c-done-subtle: 251 239 255;
+    --c-severe: 188 76 0;
+    --c-severe-subtle: 255 241 229;
+    --shadow-overlay: 0 8px 24px rgb(140 149 159 / 0.2);
+    --shadow-resting: 0 1px 0 rgb(31 35 40 / 0.04);
+    --btn-bg: 246 248 250;
+    --btn-hover: 243 244 246;
+    --btn-active: 235 236 240;
+    --btn-border: 31 35 40 / 0.15;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+    --c-canvas: 13 17 23;
+    --c-canvas-subtle: 22 27 34;
+    --c-canvas-inset: 1 4 9;
+    --c-line: 48 54 61;
+    --c-line-muted: 33 38 45;
+    --c-fg: 230 237 243;
+    --c-fg-muted: 125 133 144;
+    --c-fg-subtle: 110 118 129;
+    --c-accent: 47 129 247;
+    --c-accent-emphasis: 31 111 235;
+    --c-accent-subtle: 18 29 47;
+    --c-accent-on-fg: 9 105 218;
+    --c-success: 63 185 80;
+    --c-success-emphasis: 35 134 54;
+    --c-success-subtle: 15 36 25;
+    --c-success-on-fg: 26 127 55;
+    --c-danger: 248 81 73;
+    --c-danger-emphasis: 218 54 51;
+    --c-danger-subtle: 45 18 20;
+    --c-attention: 210 153 34;
+    --c-attention-subtle: 39 33 21;
+    --c-done: 163 113 247;
+    --c-done-subtle: 35 27 56;
+    --c-severe: 219 109 40;
+    --c-severe-subtle: 43 29 19;
+      --shadow-overlay: 0 0 0 1px #30363d, 0 16px 32px rgb(1 4 9 / 0.85);
+      --shadow-resting: 0 0 transparent;
+      --btn-bg: 33 38 45;
+      --btn-hover: 48 54 61;
+      --btn-active: 41 46 54;
+      --btn-border: 240 246 252 / 0.1;
+      color-scheme: dark;
+    }
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-fg font-sans text-sm antialiased;
+    margin: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-accent-emphasis));
+    outline-offset: 2px;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Primer button states: rest, hover, active, disabled. */
+@layer components {
+  .btn {
+    @apply inline-flex min-h-[32px] items-center justify-center gap-2 rounded-md border px-4 py-1 text-sm font-medium leading-5 transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-60;
+    background-color: rgb(var(--btn-bg));
+    border-color: rgb(var(--btn-border));
+    box-shadow: var(--shadow-resting);
+    color: rgb(var(--c-fg));
+  }
+  .btn:hover:not(:disabled) { background-color: rgb(var(--btn-hover)); }
+  .btn:active:not(:disabled) { background-color: rgb(var(--btn-active)); }
+
+  .btn-primary {
+    @apply border-transparent bg-success-emphasis text-white;
+    border-color: rgb(31 35 40 / 0.15);
+  }
+  .btn-primary:hover:not(:disabled) { background-color: rgb(var(--c-success)); }
+  .btn-primary:active:not(:disabled) { filter: brightness(0.94); }
+
+  .btn-danger { color: rgb(var(--c-danger)); }
+  .btn-danger:hover:not(:disabled) { @apply bg-danger-emphasis text-white; }
+
+  .btn-invisible {
+    @apply border-transparent bg-transparent shadow-none;
+    color: rgb(var(--c-fg-muted));
+  }
+  .btn-invisible:hover:not(:disabled) {
+    background-color: rgb(var(--c-fg) / 0.08);
+    color: rgb(var(--c-fg));
+  }
+
+  .btn-sm { @apply min-h-[28px] px-3 text-xs; }
+  .btn-icon { @apply min-h-[32px] w-8 px-0; }
+
+  .card {
+    @apply rounded-md border border-line bg-canvas;
+  }
+  .card-subtle {
+    @apply rounded-md border border-line bg-canvas-subtle;
+  }
+
+  .label {
+    @apply text-xs font-semibold text-fg-muted;
+  }
+  .field {
+    @apply min-h-[32px] w-full rounded-md border border-line bg-canvas px-3 py-1 text-sm text-fg placeholder:text-fg-subtle;
+    box-shadow: inset 0 1px 0 rgb(208 215 222 / 0.2);
+  }
+  .field:focus {
+    @apply border-accent-emphasis outline-none;
+    box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.3);
+  }
+}

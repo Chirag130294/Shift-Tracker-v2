@@ -1,0 +1,146 @@
+rules_version = '2';
+
+// Paste this into Firebase console > Firestore Database > Rules, then click Publish.
+//
+// Who can do what:
+//   users/{uid}                  only that person
+//   users/{uid}/days/{date}      only that person (vacation, sick, notes, swaps ... all private)
+//   users/{uid}/viewers/{id}     colleagues who may see your shifts. You control them. A colleague
+//                                can join only with a valid, unexpired invite code that you made.
+//   users/{uid}/following/{id}   calendars you were given access to (only you)
+//   users/{uid}/notifications    the bell. Only you read them. A colleague connected to you can leave one.
+//   shared/{uid}                 the safe copy of your shifts (no vacation, sick, notes or balances).
+//                                You write it. Only you and your active viewers can read it.
+//   shareInvites/{code}          invite links. You create and delete yours. Reading needs the code.
+//   swaps/{id}                   a swap request between exactly two people.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isDate(s) { return s is string && s.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}'); }
+    function viewerDoc(owner, viewer) { return /databases/$(database)/documents/users/$(owner)/viewers/$(viewer); }
+
+    match /users/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+                            && request.resource.data.keys().size() < 80;
+
+      // One document per date that has a change (vacation, sick, swap, note ...)
+      match /days/{day} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+                              && isDate(day)
+                              && request.resource.data.keys().hasOnly(['type', 'shiftId', 'hours', 'person', 'note', 'lieu', 'noLieu', 'bank', 'splits', 'toBank'])
+                              && (!('note' in request.resource.data) || request.resource.data.note.size() <= 500)
+                              && (!('person' in request.resource.data) || request.resource.data.person.size() <= 100)
+                              && (!('splits' in request.resource.data) || (request.resource.data.splits is list && request.resource.data.splits.size() <= 6));
+      }
+
+      // People who can view your shifts
+      match /viewers/{viewerUid} {
+        allow read: if signedIn() && (request.auth.uid == uid || request.auth.uid == viewerUid);
+        // A colleague joins with an invite code you made (it must exist, be yours and not be expired)
+        allow create: if signedIn() && request.auth.uid == viewerUid
+                      && request.resource.data.keys().hasOnly(['code', 'name', 'email', 'since', 'active', 'swap'])
+                      && request.resource.data.active == true && request.resource.data.swap == false
+                      && request.resource.data.name is string && request.resource.data.name.size() <= 60
+                      && get(/databases/$(database)/documents/shareInvites/$(request.resource.data.code)).data.owner == uid
+                      && get(/databases/$(database)/documents/shareInvites/$(request.resource.data.code)).data.expires > request.time.toMillis();
+        // Only you switch access or swap requests on and off
+        allow update: if signedIn() && request.auth.uid == uid
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'swap']);
+        // You can remove anyone. They can remove themselves.
+        allow delete: if signedIn() && (request.auth.uid == uid || request.auth.uid == viewerUid);
+      }
+
+      // Calendars shared with you
+      match /following/{ownerUid} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+                              && request.resource.data.keys().hasOnly(['name', 'since']);
+      }
+
+      // The bell
+      match /notifications/{id} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow update: if signedIn() && request.auth.uid == uid
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if signedIn() && request.resource.data.from == request.auth.uid
+                      && (exists(viewerDoc(uid, request.auth.uid)) || exists(viewerDoc(request.auth.uid, uid)))
+                      && request.resource.data.keys().hasOnly(['type', 'from', 'fromName', 'text', 'ref', 'at', 'read'])
+                      && request.resource.data.read == false
+                      && request.resource.data.text is string && request.resource.data.text.size() <= 200
+                      && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 60;
+      }
+    }
+
+    // The safe copy of someone's shifts
+    match /shared/{ownerUid} {
+      allow read: if signedIn() && (request.auth.uid == ownerUid
+                  || (exists(viewerDoc(ownerUid, request.auth.uid)) && get(viewerDoc(ownerUid, request.auth.uid)).data.active == true));
+      allow create, update: if signedIn() && request.auth.uid == ownerUid
+                            && request.resource.data.keys().hasOnly(['name', 'weekStart', 'shifts', 'from', 'to', 'days', 'hash'])
+                            && request.resource.data.days.size() <= 400
+                            && request.resource.data.shifts.size() <= 30;
+      allow delete: if signedIn() && request.auth.uid == ownerUid;
+    }
+
+    // Invite links
+    match /shareInvites/{code} {
+      allow get: if signedIn();
+      allow list: if signedIn() && resource.data.owner == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['owner', 'ownerName', 'created', 'expires'])
+                    && request.resource.data.expires <= request.time.toMillis() + 691200000;
+      allow delete: if signedIn() && resource.data.owner == request.auth.uid;
+    }
+
+    // Swap requests between two people
+    match /swaps/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn() && request.resource.data.aUid == request.auth.uid
+                    && request.resource.data.members == [request.auth.uid, request.resource.data.bUid]
+                    && request.resource.data.aUid != request.resource.data.bUid
+                    && request.resource.data.status == 'pending' && request.resource.data.turn == request.resource.data.bUid
+                    && isDate(request.resource.data.aDate) && isDate(request.resource.data.bDate)
+                    && request.resource.data.keys().hasOnly(['aUid', 'aName', 'aDate', 'aShift', 'bUid', 'bName', 'bDate', 'bShift',
+                                                             'status', 'turn', 'note', 'created', 'updated', 'applied', 'log', 'members'])
+                    && exists(viewerDoc(request.resource.data.bUid, request.auth.uid))
+                    && get(viewerDoc(request.resource.data.bUid, request.auth.uid)).data.active == true
+                    && get(viewerDoc(request.resource.data.bUid, request.auth.uid)).data.swap == true;
+
+      allow update: if signedIn() && request.auth.uid in resource.data.members
+                    && request.resource.data.aUid == resource.data.aUid && request.resource.data.bUid == resource.data.bUid
+                    && request.resource.data.members == resource.data.members && request.resource.data.created == resource.data.created
+                    && (
+                      // the person whose turn it is approves or declines
+                      (resource.data.turn == request.auth.uid && resource.data.status in ['pending', 'countered']
+                        && request.resource.data.status in ['approved', 'declined']
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'turn', 'updated', 'log']))
+                      // ... or suggests a different date for their own shift
+                      || (resource.data.turn == request.auth.uid && resource.data.status in ['pending', 'countered']
+                        && request.resource.data.status == 'countered'
+                        && request.resource.data.turn != request.auth.uid
+                        && isDate(request.resource.data.aDate) && isDate(request.resource.data.bDate)
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+                             request.auth.uid == resource.data.aUid ? ['status', 'turn', 'updated', 'log', 'aDate', 'aShift'] : ['status', 'turn', 'updated', 'log', 'bDate', 'bShift']))
+                      // the person who asked can cancel while it is still open
+                      || (request.auth.uid == resource.data.aUid && resource.data.status in ['pending', 'countered']
+                        && request.resource.data.status == 'cancelled'
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updated', 'log']))
+                      // each person marks their own calendar as updated after approval
+                      || (resource.data.status == 'approved'
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applied'])
+                        && request.resource.data.applied.diff(resource.data.applied).affectedKeys().hasOnly([request.auth.uid]))
+                    );
+
+      allow delete: if signedIn() && request.auth.uid in resource.data.members && resource.data.status != 'pending';
+    }
+
+    // Everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
